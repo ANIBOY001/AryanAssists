@@ -13,7 +13,7 @@ from pathlib import Path
 # Add current directory to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from cyberai_agent import CyberAgent, log, MemoryManager, LLMEngine, ToolRegistry
+from cyberai_agent import IntelligentAgent, log
 
 def run_cli_mode():
     """Run interactive CLI mode with Rich UI."""
@@ -27,7 +27,7 @@ def run_cli_mode():
         console = None
         print("Install rich: pip install rich")
     
-    agent = CyberAgent()
+    agent = IntelligentAgent()
     
     if console:
         console.print(Panel.fit(
