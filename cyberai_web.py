@@ -18,7 +18,7 @@ from fastapi.responses import HTMLResponse
 import uvicorn
 
 # Import our agent system
-from cyberai_agent import CyberAgent, log
+from cyberai_agent import IntelligentAgent, log
 
 # Create FastAPI app
 app = FastAPI(title="CyberAI Pro", version="2.0")
@@ -26,17 +26,16 @@ app = FastAPI(title="CyberAI Pro", version="2.0")
 # Store active sessions
 class SessionManager:
     def __init__(self):
-        self.agents: Dict[str, CyberAgent] = {}
+        self.agents: Dict[str, IntelligentAgent] = {}
         self.connections: Dict[str, WebSocket] = {}
     
-    def get_or_create_agent(self, session_id: str) -> CyberAgent:
+    def get_or_create_agent(self, session_id: str) -> IntelligentAgent:
         if session_id not in self.agents:
-            self.agents[session_id] = CyberAgent()
+            self.agents[session_id] = IntelligentAgent()
         return self.agents[session_id]
     
     def remove_session(self, session_id: str):
         if session_id in self.agents:
-            self.agents[session_id].stop()
             del self.agents[session_id]
         if session_id in self.connections:
             del self.connections[session_id]

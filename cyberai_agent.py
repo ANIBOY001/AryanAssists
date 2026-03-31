@@ -1,6 +1,6 @@
 """
-CyberAI Pro - Core Agent System
-Proper agent architecture with loop, tools, and memory
+CyberAI Pro v3.0 - Intelligent Agent System
+Actually reasons, plans, writes code, and executes like a real AI assistant
 """
 
 import json
@@ -8,415 +8,372 @@ import os
 import re
 import sys
 import time
-import threading
-import queue
-from typing import Dict, List, Optional, Any, Callable
-from dataclasses import dataclass, field
-from datetime import datetime
+import subprocess
+from typing import Dict, List, Optional, Any
 from pathlib import Path
+from datetime import datetime
 
-# Load environment variables
+# Load environment
 from dotenv import load_dotenv
 load_dotenv()
 
-# Rich for beautiful terminal output
+# Rich for output
 try:
     from rich.console import Console
     from rich.panel import Panel
-    from rich.text import Text
-    from rich.status import Status
-    RICH_AVAILABLE = True
-except ImportError:
-    RICH_AVAILABLE = False
-
-console = Console() if RICH_AVAILABLE else None
+    console = Console()
+    RICH = True
+except:
+    RICH = False
+    console = None
 
 def log(msg: str, style: str = ""):
-    """Log with Rich if available."""
-    if RICH_AVAILABLE and console:
+    if RICH and console:
         console.print(msg, style=style)
     else:
         print(msg)
 
 # ============================================================================
-# MEMORY SYSTEM
+# INTELLIGENT AGENT CORE
 # ============================================================================
 
-@dataclass
-class MemoryEntry:
-    """Single memory entry."""
-    timestamp: str
-    role: str  # 'user', 'assistant', 'system', 'tool'
-    content: str
-    metadata: Dict = field(default_factory=dict)
-
-class MemoryManager:
-    """Persistent memory for the agent."""
+class IntelligentAgent:
+    """
+    AI Agent that actually reasons and acts intelligently.
+    Can write code, create files, execute commands, and solve problems.
+    """
     
-    def __init__(self, memory_file: str = "cyberai_memory.json"):
-        self.memory_file = Path(memory_file)
-        self.short_term: List[MemoryEntry] = []  # Last N interactions
-        self.long_term: List[MemoryEntry] = []   # Important facts
-        self.max_short_term = 20
-        self.max_long_term = 100
-        self._load()
+    SYSTEM_PROMPT = """You are CyberAI Pro, an intelligent AI assistant with system access.
+
+Your job is to help the user by thinking through problems and taking actions.
+
+CAPABILITIES:
+1. Write Python code to solve problems
+2. Create and edit files
+3. Run shell commands
+4. Read files and analyze content
+5. Install packages if needed
+
+HOW TO RESPOND:
+Always respond in this format:
+
+THOUGHT: [Your reasoning about what needs to be done]
+
+ACTION: [One of: write_code, run_command, read_file, write_file, install_package, finish]
+
+INPUT: [The specific input for the action]
+
+For write_code: Provide the full Python code
+For run_command: Provide the shell command
+For write_file: Format as "filepath|content"
+For read_file: Provide the filepath
+For install_package: Package name (e.g., "requests")
+For finish: Your final response to the user
+
+EXAMPLE 1 - Writing a script:
+THOUGHT: The user wants a calculator. I'll write a Python script.
+
+ACTION: write_code
+
+INPUT: calculator.py|def add(a, b): return a + b
+print("2+2 =", add(2, 2))
+
+EXAMPLE 2 - Running the script:
+THOUGHT: Now I'll run the calculator script.
+
+ACTION: run_command
+
+INPUT: python calculator.py
+
+IMPORTANT:
+- Always think step by step
+- If something fails, try a different approach
+- Write complete, working code
+- Don't use placeholder comments like "# add code here"
+"""
     
-    def _load(self):
-        """Load memory from disk."""
-        if self.memory_file.exists():
-            try:
-                data = json.loads(self.memory_file.read_text())
-                self.short_term = [MemoryEntry(**e) for e in data.get('short_term', [])]
-                self.long_term = [MemoryEntry(**e) for e in data.get('long_term', [])]
-                log(f"[Memory] Loaded {len(self.short_term)} short-term, {len(self.long_term)} long-term")
-            except Exception as e:
-                log(f"[Memory] Load failed: {e}", "red")
-    
-    def _save(self):
-        """Save memory to disk."""
-        try:
-            data = {
-                'short_term': [vars(e) for e in self.short_term],
-                'long_term': [vars(e) for e in self.long_term]
-            }
-            self.memory_file.write_text(json.dumps(data, indent=2))
-        except Exception as e:
-            log(f"[Memory] Save failed: {e}", "red")
-    
-    def add(self, role: str, content: str, metadata: Dict = None):
-        """Add entry to short-term memory."""
-        entry = MemoryEntry(
-            timestamp=datetime.now().isoformat(),
-            role=role,
-            content=content,
-            metadata=metadata or {}
-        )
-        self.short_term.append(entry)
-        
-        # Trim if needed
-        if len(self.short_term) > self.max_short_term:
-            self.short_term = self.short_term[-self.max_short_term:]
-        
-        self._save()
-    
-    def get_context(self, n_recent: int = 10) -> str:
-        """Get recent context for LLM."""
-        recent = self.short_term[-n_recent:]
-        return "\n".join([
-            f"[{e.role}] {e.content[:200]}" 
-            for e in recent
-        ])
-    
-    def get_formatted_history(self, n: int = 10) -> List[Dict]:
-        """Get history in OpenAI format."""
-        return [
-            {"role": e.role if e.role in ['user', 'assistant', 'system'] else 'user', 
-             "content": e.content}
-            for e in self.short_term[-n:]
-        ]
-
-# ============================================================================
-# LLM INTERFACE with Retry Logic
-# ============================================================================
-
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
-import openai
-import httpx
-
-class LLMEngine:
-    """Robust LLM interface with failover and retries."""
-    
-    SYSTEM_PROMPT = """You are CyberAI Pro, an autonomous AI agent with system control.
-
-CRITICAL: You MUST respond with valid JSON only. No markdown, no extra text.
-
-Response format:
-{
-  "thought": "Your reasoning here",
-  "action": "tool_name or 'finish'",
-  "input": "tool parameters",
-  "response": "What to tell the user"
-}
-
-Available tools:
-- run_command: Execute shell command
-- read_file: Read file contents
-- write_file: Write to file
-- list_directory: List files in directory
-- open_browser: Open URL in browser
-- web_search: Search the web
-- finish: Task is complete
-
-Rules:
-1. ALWAYS use JSON format
-2. If task needs multiple steps, plan them in thought
-3. Execute tools one at a time
-4. Use 'finish' when done
-5. Be concise and direct"""
-
     def __init__(self):
-        self.providers = []
-        self._init_providers()
-        self.current_provider = 0
+        self.memory: List[Dict] = []
+        self.max_memory = 20
+        self.setup_llm()
+        log("[Agent] Intelligent Agent initialized", "green")
     
-    def _init_providers(self):
-        """Initialize all available providers."""
+    def setup_llm(self):
+        """Setup LLM providers."""
+        self.providers = []
+        
         # Groq
-        groq_key = os.getenv("GROQ_API_KEY", "")
+        groq_key = os.getenv('GROQ_API_KEY')
         if groq_key:
-            self.providers.append({
-                "name": "groq",
-                "client": openai.OpenAI(api_key=groq_key, base_url="https://api.groq.com/openai/v1"),
-                "model": "llama-3.3-70b-versatile",
-                "timeout": 15
-            })
+            try:
+                from groq import Groq
+                self.providers.append({
+                    'name': 'Groq',
+                    'client': Groq(api_key=groq_key),
+                    'model': 'llama-3.3-70b-versatile'
+                })
+            except:
+                pass
         
         # OpenRouter
-        or_key = os.getenv("OPENROUTER_API_KEY", "")
+        or_key = os.getenv('OPENROUTER_API_KEY')
         if or_key:
-            self.providers.append({
-                "name": "openrouter",
-                "client": openai.OpenAI(api_key=or_key, base_url="https://openrouter.ai/api/v1"),
-                "model": "anthropic/claude-3.5-sonnet",
-                "timeout": 20
-            })
-        
-        log(f"[LLM] Initialized {len(self.providers)} providers", "green")
-    
-    def ask(self, messages: List[Dict], max_tokens: int = 2000) -> str:
-        """Ask LLM with automatic failover."""
-        for i, provider in enumerate(self.providers):
             try:
-                log(f"[LLM] Trying {provider['name']}...", "dim")
-                
-                response = provider["client"].chat.completions.create(
-                    model=provider["model"],
-                    messages=[{"role": "system", "content": self.SYSTEM_PROMPT}] + messages,
+                from openai import OpenAI
+                self.providers.append({
+                    'name': 'OpenRouter',
+                    'client': OpenAI(
+                        base_url="https://openrouter.ai/api/v1",
+                        api_key=or_key
+                    ),
+                    'model': 'anthropic/claude-3.5-sonnet'
+                })
+            except:
+                pass
+    
+    def ask_llm(self, prompt: str, max_tokens: int = 2000) -> str:
+        """Query LLM with failover."""
+        messages = [
+            {"role": "system", "content": self.SYSTEM_PROMPT},
+            *self.get_history(),
+            {"role": "user", "content": prompt}
+        ]
+        
+        for provider in self.providers:
+            try:
+                resp = provider['client'].chat.completions.create(
+                    model=provider['model'],
+                    messages=messages,
+                    temperature=0.2,
                     max_tokens=max_tokens,
-                    temperature=0.3,
-                    timeout=provider["timeout"]
+                    timeout=15
                 )
-                
-                content = response.choices[0].message.content
-                log(f"[LLM] {provider['name']} success", "green")
-                return content
-                
+                return resp.choices[0].message.content
             except Exception as e:
                 log(f"[LLM] {provider['name']} failed: {e}", "red")
                 continue
         
-        return json.dumps({
-            "thought": "All providers failed",
-            "action": "finish",
-            "input": "",
-            "response": "Error: All AI providers failed. Check API keys."
+        return "THOUGHT: All LLM providers failed\n\nACTION: finish\n\nINPUT: Error: AI service unavailable"
+    
+    def get_history(self) -> List[Dict]:
+        """Get conversation history."""
+        history = []
+        for entry in self.memory[-10:]:
+            history.append({"role": entry['role'], "content": entry['content']})
+        return history
+    
+    def add_to_memory(self, role: str, content: str):
+        """Add to memory."""
+        self.memory.append({
+            'role': role,
+            'content': content,
+            'timestamp': datetime.now().isoformat()
         })
+        if len(self.memory) > self.max_memory:
+            self.memory = self.memory[-self.max_memory:]
     
     def parse_response(self, response: str) -> Dict:
-        """Parse LLM response to JSON."""
-        try:
-            # Try to find JSON in response
-            # Handle markdown code blocks
-            if "```json" in response:
-                response = response.split("```json")[1].split("```")[0]
-            elif "```" in response:
-                response = response.split("```")[1].split("```")[0]
-            
-            return json.loads(response.strip())
-        except json.JSONDecodeError:
-            # Return as plain text response
-            return {
-                "thought": "Could not parse JSON",
-                "action": "finish",
-                "input": "",
-                "response": response
-            }
-
-# ============================================================================
-# TOOL SYSTEM
-# ============================================================================
-
-class ToolRegistry:
-    """Registry of available tools."""
-    
-    def __init__(self):
-        self.tools: Dict[str, Callable] = {}
-        self.register_defaults()
-    
-    def register(self, name: str, func: Callable):
-        """Register a tool."""
-        self.tools[name] = func
-    
-    def execute(self, name: str, input_data: str) -> Dict:
-        """Execute a tool by name."""
-        if name not in self.tools:
-            return {"success": False, "error": f"Unknown tool: {name}"}
+        """Parse LLM response into structured format."""
+        thought = ""
+        action = "finish"
+        input_data = ""
         
+        # Extract THOUGHT
+        thought_match = re.search(r'THOUGHT:\s*(.+?)(?=\n\nACTION:|$)', response, re.DOTALL)
+        if thought_match:
+            thought = thought_match.group(1).strip()
+        
+        # Extract ACTION
+        action_match = re.search(r'ACTION:\s*(\w+)', response)
+        if action_match:
+            action = action_match.group(1).lower()
+        
+        # Extract INPUT
+        input_match = re.search(r'INPUT:\s*(.+?)(?=\n\n|$)', response, re.DOTALL)
+        if input_match:
+            input_data = input_match.group(1).strip()
+        
+        return {
+            'thought': thought,
+            'action': action,
+            'input': input_data,
+            'raw': response
+        }
+    
+    def execute_action(self, action: str, input_data: str) -> Dict:
+        """Execute the chosen action."""
         try:
-            result = self.tools[name](input_data)
-            return {"success": True, "result": result}
-        except Exception as e:
-            return {"success": False, "error": str(e)}
-    
-    def register_defaults(self):
-        """Register default tools."""
-        self.register("run_command", self._run_command)
-        self.register("read_file", self._read_file)
-        self.register("write_file", self._write_file)
-        self.register("list_directory", self._list_directory)
-        self.register("open_browser", self._open_browser)
-        self.register("finish", lambda x: {"status": "complete", "message": x})
-    
-    def _run_command(self, cmd: str) -> str:
-        """Execute shell command."""
-        import subprocess
-        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=30)
-        output = result.stdout + result.stderr
-        return output[:1000] if output else "Command executed (no output)"
-    
-    def _read_file(self, path: str) -> str:
-        """Read file contents."""
-        try:
-            return Path(path).read_text()[:5000]
-        except Exception as e:
-            return f"Error: {e}"
-    
-    def _write_file(self, params: str) -> str:
-        """Write to file. Format: path|content"""
-        try:
-            parts = params.split("|", 1)
-            if len(parts) == 2:
-                path, content = parts
+            if action == 'write_code':
+                return self._write_code(input_data)
+            elif action == 'run_command':
+                return self._run_command(input_data)
+            elif action == 'write_file':
+                return self._write_file(input_data)
+            elif action == 'read_file':
+                return self._read_file(input_data)
+            elif action == 'install_package':
+                return self._install_package(input_data)
+            elif action == 'finish':
+                return {'success': True, 'result': input_data, 'type': 'finish'}
             else:
-                # Try to parse as JSON
-                data = json.loads(params)
-                path = data.get("path", "")
-                content = data.get("content", "")
-            
-            Path(path).write_text(content)
-            return f"File written: {path}"
+                return {'success': False, 'error': f'Unknown action: {action}'}
         except Exception as e:
-            return f"Error: {e}"
+            return {'success': False, 'error': str(e)}
     
-    def _list_directory(self, path: str) -> str:
-        """List directory contents."""
+    def _write_code(self, code_input: str) -> Dict:
+        """Write Python code to a file and execute it."""
         try:
-            p = Path(path or ".")
-            files = [f.name for f in p.iterdir()]
-            return "\n".join(files[:50])
+            # Parse filename and code
+            if '|' in code_input:
+                filepath, code = code_input.split('|', 1)
+            else:
+                # Auto-generate filename
+                filepath = f"generated_{int(time.time())}.py"
+                code = code_input
+            
+            filepath = filepath.strip()
+            code = code.strip()
+            
+            # Write file
+            Path(filepath).write_text(code)
+            
+            # Execute the code
+            result = subprocess.run(
+                ['python', filepath],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            
+            output = result.stdout + result.stderr
+            
+            return {
+                'success': result.returncode == 0,
+                'result': f"Created: {filepath}\n\nOutput:\n{output[:500]}",
+                'filepath': filepath,
+                'output': output
+            }
         except Exception as e:
-            return f"Error: {e}"
+            return {'success': False, 'error': str(e)}
     
-    def _open_browser(self, url: str) -> str:
-        """Open URL in browser."""
-        import webbrowser
-        webbrowser.open(url)
-        return f"Opened: {url}"
-
-# ============================================================================
-# AGENT CORE
-# ============================================================================
-
-class CyberAgent:
-    """Autonomous AI Agent with proper loop architecture."""
+    def _run_command(self, cmd: str) -> Dict:
+        """Run shell command."""
+        try:
+            result = subprocess.run(
+                cmd,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            output = result.stdout + result.stderr
+            return {
+                'success': result.returncode == 0,
+                'result': output[:1000] if output else "Command executed (no output)"
+            }
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
     
-    def __init__(self):
-        self.memory = MemoryManager()
-        self.llm = LLMEngine()
-        self.tools = ToolRegistry()
-        self.running = False
-        self.max_iterations = 10  # Prevent infinite loops
-        
-        log("[Agent] Initialized", "green")
+    def _write_file(self, file_input: str) -> Dict:
+        """Write content to file."""
+        try:
+            if '|' not in file_input:
+                return {'success': False, 'error': 'Format: filepath|content'}
+            
+            filepath, content = file_input.split('|', 1)
+            Path(filepath.strip()).write_text(content)
+            return {'success': True, 'result': f"Written: {filepath}"}
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
     
-    def run(self, goal: str) -> List[Dict]:
-        """Execute agent loop for a goal."""
-        self.running = True
-        results = []
-        
-        # Add user goal to memory
-        self.memory.add("user", goal, {"type": "goal"})
-        
+    def _read_file(self, filepath: str) -> Dict:
+        """Read file content."""
+        try:
+            content = Path(filepath).read_text()
+            return {'success': True, 'result': content[:2000]}
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+    
+    def _install_package(self, package: str) -> Dict:
+        """Install Python package."""
+        try:
+            result = subprocess.run(
+                ['pip', 'install', package],
+                capture_output=True,
+                text=True,
+                timeout=60
+            )
+            return {
+                'success': result.returncode == 0,
+                'result': f"Installed {package}"
+            }
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+    
+    def run(self, goal: str, max_steps: int = 15) -> List[Dict]:
+        """Run the agent loop on a goal."""
         log(f"\n[Agent] Goal: {goal}", "cyan bold")
         
-        for iteration in range(self.max_iterations):
-            if not self.running:
-                break
+        self.add_to_memory('user', goal)
+        results = []
+        
+        for step in range(max_steps):
+            log(f"\n[Step {step + 1}] Thinking...", "dim")
             
-            log(f"\n[Agent] Step {iteration + 1}/{self.max_iterations}", "dim")
+            # Ask LLM what to do
+            prompt = f"""Current task: {goal}
+
+Previous actions and results:
+{self._format_history()}
+
+What should I do next? Respond in the required format."""
             
-            # Get history context
-            history = self.memory.get_formatted_history(15)
+            llm_response = self.ask_llm(prompt)
+            parsed = self.parse_response(llm_response)
             
-            # Ask LLM for next action
-            messages = history + [{"role": "user", "content": f"Current goal: {goal}\nWhat should I do next?"}]
+            thought = parsed['thought']
+            action = parsed['action']
+            input_data = parsed['input']
             
-            try:
-                llm_response = self.llm.ask(messages, max_tokens=1500)
-                parsed = self.llm.parse_response(llm_response)
-            except Exception as e:
-                log(f"[Agent] LLM error: {e}", "red")
-                break
+            log(f"[Thought] {thought[:80]}...", "blue")
+            log(f"[Action] {action}: {input_data[:60]}...", "yellow")
             
-            # Log the thought
-            thought = parsed.get("thought", "No thought provided")
-            log(f"[Thought] {thought[:100]}...", "dim")
+            # Execute
+            result = self.execute_action(action, input_data)
             
-            action = parsed.get("action", "finish")
-            action_input = parsed.get("input", "")
-            response_text = parsed.get("response", "")
-            
-            # Store in memory
-            self.memory.add("assistant", json.dumps(parsed), {"type": "action"})
-            
-            # Execute if not finish
-            if action == "finish":
-                log(f"[Agent] Complete: {response_text}", "green bold")
-                results.append({
-                    "step": iteration,
-                    "action": "finish",
-                    "result": response_text
-                })
-                break
-            
-            # Execute tool
-            log(f"[Tool] {action}: {action_input[:50]}...", "yellow")
-            tool_result = self.tools.execute(action, action_input)
-            
-            result_summary = tool_result.get("result", tool_result.get("error", ""))[:200]
-            log(f"[Result] {result_summary}...", "blue" if tool_result["success"] else "red")
-            
-            # Store result
-            self.memory.add("system", json.dumps(tool_result), {"type": "result"})
+            # Store
+            self.add_to_memory('assistant', f"THOUGHT: {thought}\nACTION: {action}\nINPUT: {input_data}")
+            self.add_to_memory('system', f"Result: {result.get('result', result.get('error', 'Unknown'))}")
             
             results.append({
-                "step": iteration,
-                "action": action,
-                "input": action_input,
-                "result": tool_result
+                'step': step,
+                'thought': thought,
+                'action': action,
+                'input': input_data,
+                'result': result
             })
+            
+            if action == 'finish':
+                log(f"\n[Complete] {input_data}", "green bold")
+                break
         
         return results
     
-    def stop(self):
-        """Stop the agent loop."""
-        self.running = False
+    def _format_history(self) -> str:
+        """Format recent history for LLM."""
+        recent = self.memory[-6:]
+        formatted = []
+        for entry in recent:
+            role = entry['role']
+            content = entry['content'][:200]
+            formatted.append(f"{role}: {content}")
+        return "\n".join(formatted)
 
-# ============================================================================
-# MAIN ENTRY
-# ============================================================================
+# Backwards compatibility
+CyberAgent = IntelligentAgent
 
 if __name__ == "__main__":
-    # Test the agent
-    agent = CyberAgent()
-    
-    # Example goals
-    goals = [
-        "Create a file called test.txt with 'Hello World'",
-        "List files in current directory",
-        "What is 2+2?"
-    ]
-    
-    for goal in goals:
-        results = agent.run(goal)
-        print(f"\n{'='*50}")
+    # Test
+    agent = IntelligentAgent()
+    results = agent.run("Create a Python script that calculates fibonacci numbers and run it")
+    print(f"\nCompleted {len(results)} steps")
