@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CyberAI Pro - Autonomous AI Agent</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
+            color: #fff;
+            min-height: 100vh;
+            line-height: 1.6;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+        
+        header {
+            text-align: center;
+            padding: 60px 0;
+        }
+        
+        .logo {
+            font-size: 4rem;
+            font-weight: 900;
+            background: linear-gradient(90deg, #00d4ff, #7b2cbf, #00d4ff);
+            background-size: 200% auto;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            animation: shine 3s linear infinite;
+            margin-bottom: 20px;
+        }
+        
+        @keyframes shine {
+            to { background-position: 200% center; }
+        }
+        
+        .tagline {
+            font-size: 1.5rem;
+            color: #a0a0a0;
+            margin-bottom: 40px;
+        }
+        
+        .cta-button {
+            display: inline-block;
+            background: linear-gradient(135deg, #00d4ff, #7b2cbf);
+            color: #fff;
+            padding: 15px 40px;
+            border-radius: 50px;
+            text-decoration: none;
+            font-weight: bold;
+            font-size: 1.1rem;
+            transition: transform 0.3s, box-shadow 0.3s;
+        }
+        
+        .cta-button:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 30px rgba(0, 212, 255, 0.3);
+        }
+        
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 30px;
+            margin: 60px 0;
+        }
+        
+        .feature-card {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 30px;
+            transition: transform 0.3s, background 0.3s;
+        }
+        
+        .feature-card:hover {
+            transform: translateY(-5px);
+            background: rgba(255, 255, 255, 0.08);
+        }
+        
+        .feature-icon {
+            font-size: 3rem;
+            margin-bottom: 20px;
+        }
+        
+        .feature-card h3 {
+            font-size: 1.5rem;
+            margin-bottom: 15px;
+            color: #00d4ff;
+        }
+        
+        .feature-card p {
+            color: #b0b0b0;
+            line-height: 1.8;
+        }
+        
+        .code-section {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 20px;
+            padding: 40px;
+            margin: 40px 0;
+        }
+        
+        .code-section h2 {
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2rem;
+        }
+        
+        pre {
+            background: #1a1a2e;
+            padding: 20px;
+            border-radius: 10px;
+            overflow-x: auto;
+            border: 1px solid rgba(0, 212, 255, 0.2);
+        }
+        
+        code {
+            font-family: 'Consolas', monospace;
+            color: #00d4ff;
+            font-size: 0.9rem;
+        }
+        
+        .tech-stack {
+            text-align: center;
+            margin: 60px 0;
+        }
+        
+        .tech-stack h2 {
+            margin-bottom: 30px;
+            font-size: 2rem;
+        }
+        
+        .tech-badges {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 15px;
+        }
+        
+        .tech-badge {
+            background: rgba(0, 212, 255, 0.1);
+            border: 1px solid rgba(0, 212, 255, 0.3);
+            padding: 10px 20px;
+            border-radius: 50px;
+            font-size: 0.9rem;
+            color: #00d4ff;
+        }
+        
+        footer {
+            text-align: center;
+            padding: 40px 0;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            margin-top: 60px;
+        }
+        
+        footer a {
+            color: #00d4ff;
+            text-decoration: none;
+        }
+        
+        footer a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="logo">CyberAI Pro</div>
+            <p class="tagline">Autonomous AI Agent System with Root Access</p>
+            <a href="https://github.com/ANIBOY001/AryanAssists" class="cta-button">View on GitHub</a>
+        </header>
+        
+        <div class="features">
+            <div class="feature-card">
+                <div class="feature-icon">🤖</div>
+                <h3>Agent Loop Architecture</h3>
+                <p>Proper planning-acting-observing loop with structured JSON outputs. The AI doesn't just respond once - it plans multi-step tasks and executes them autonomously.</p>
+            </div>
+            
+            <div class="feature-card">
+                <div class="feature-icon">⚡</div>
+                <h3>Lightning Fast</h3>
+                <p>Powered by Groq LLaMA 3.3 70B with 15-second timeout and automatic failover to OpenRouter. No more waiting forever for responses.</p>
+            </div>
+            
+            <div class="feature-card">
+                <div class="feature-icon">🧠</div>
+                <h3>Memory System</h3>
+                <p>Persistent short-term and long-term memory stored in JSON. The AI remembers your conversations and learns from previous interactions.</p>
+            </div>
+            
+            <div class="feature-card">
+                <div class="feature-icon">🛠️</div>
+                <h3>Tool System</h3>
+                <p>Safe tool-based execution - run commands, read/write files, list directories, open browsers. No blind root access - everything goes through defined tools.</p>
+            </div>
+            
+            <div class="feature-card">
+                <div class="feature-icon">🌐</div>
+                <h3>Beautiful Web UI</h3>
+                <p>FastAPI-powered web interface with real-time WebSocket updates. Dark theme, responsive design, execution logs, and tool quick-access.</p>
+            </div>
+            
+            <div class="feature-card">
+                <div class="feature-icon">⌨️</div>
+                <h3>Hotkey Summon</h3>
+                <p>Press Ctrl+Shift+A anywhere to summon the overlay. Desktop integration with system tray icon and global hotkeys.</p>
+            </div>
+        </div>
+        
+        <div class="code-section">
+            <h2>Quick Start</h2>
+            <pre><code># Clone the repository
+git clone https://github.com/ANIBOY001/AryanAssists.git
+cd AryanAssists
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Run Web UI
+python main.py --mode web
+
+# Or CLI mode
+python main.py --mode cli
+
+# Or Desktop Overlay (Ctrl+Shift+A)
+python main.py --mode overlay</code></pre>
+        </div>
+        
+        <div class="tech-stack">
+            <h2>Tech Stack</h2>
+            <div class="tech-badges">
+                <span class="tech-badge">Python 3.11+</span>
+                <span class="tech-badge">FastAPI</span>
+                <span class="tech-badge">WebSocket</span>
+                <span class="tech-badge">Groq API</span>
+                <span class="tech-badge">OpenRouter</span>
+                <span class="tech-badge">Tkinter</span>
+                <span class="tech-badge">Rich</span>
+                <span class="tech-badge">Pydantic</span>
+            </div>
+        </div>
+        
+        <footer>
+            <p>Built with 💜 by <a href="https://github.com/ANIBOY001">ANIBOY001</a></p>
+            <p style="margin-top: 10px; color: #666;">CyberAI Pro v2.0 | Autonomous Agent System</p>
+        </footer>
+    </div>
+</body>
+</html>
