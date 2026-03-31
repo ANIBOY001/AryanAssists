@@ -137,7 +137,7 @@ IMPORTANT:
             except:
                 pass
     
-    def ask_llm(self, prompt: str, max_tokens: int = 2000) -> str:
+    def ask_llm(self, prompt: str, max_tokens: int = 1000) -> str:
         """Query LLM with failover."""
         messages = [
             {"role": "system", "content": self.SYSTEM_PROMPT},
@@ -151,7 +151,7 @@ IMPORTANT:
                     model=provider['model'],
                     messages=messages,
                     temperature=0.2,
-                    max_tokens=max_tokens,
+                    max_tokens=1000,
                     timeout=15
                 )
                 return resp.choices[0].message.content
@@ -316,12 +316,13 @@ IMPORTANT:
         except Exception as e:
             return {'success': False, 'error': str(e)}
     
-    def run(self, goal: str, max_steps: int = 15) -> List[Dict]:
+    def run(self, goal: str, max_steps: int = 10) -> List[Dict]:
         """Run the agent loop on a goal."""
         log(f"\n[Agent] Goal: {goal}", "cyan bold")
         
         self.add_to_memory('user', goal)
         results = []
+        created_files = set()  # Track created files
         
         for step in range(max_steps):
             log(f"\n[Step {step + 1}] Thinking...", "dim")
@@ -332,14 +333,32 @@ IMPORTANT:
 Previous actions and results:
 {self._format_history()}
 
-What should I do next? Respond in the required format."""
+Already created files: {', '.join(created_files) if created_files else 'None'}
+
+What should I do next? 
+- If you already created a file, use run_command to execute it
+- If the task is complete, use finish
+
+Respond in the required format."""
             
-            llm_response = self.ask_llm(prompt)
+            llm_response = self.ask_llm(prompt, max_tokens=800)
             parsed = self.parse_response(llm_response)
             
             thought = parsed['thought']
             action = parsed['action']
             input_data = parsed['input']
+            
+            # Prevent infinite loops - if same action/input repeated
+            if results and action == results[-1]['action'] and input_data == results[-1]['input']:
+                log(f"[Warning] Repeated action detected, forcing finish", "yellow")
+                action = 'finish'
+                input_data = 'Task completed with the steps taken.'
+            
+            # Track created files
+            if action == 'write_code' or action == 'write_file':
+                if '|' in input_data:
+                    filepath = input_data.split('|', 1)[0].strip()
+                    created_files.add(filepath)
             
             log(f"[Thought] {thought[:80]}...", "blue")
             log(f"[Action] {action}: {input_data[:60]}...", "yellow")
