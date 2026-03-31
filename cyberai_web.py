@@ -1,6 +1,7 @@
 """
 CyberAI Pro - Web UI with FastAPI
 Beautiful, responsive web interface with real-time updates
+CACHE_BUST: v3.0-rebuild-001
 """
 
 import asyncio
